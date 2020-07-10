@@ -1,9 +1,12 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart';
 import 'package:xtreme_movie_app/models/film.dart';
+import 'package:xtreme_movie_app/repositories/film_repository.dart';
 import 'package:xtreme_movie_app/services/film_service.dart';
 import 'package:xtreme_movie_app/services/models/get_film_response.dart';
+
+import 'components/film_list_view.dart';
+import 'components/search_film_bar.dart';
 
 class SearchPage extends StatefulWidget {
   @override
@@ -12,8 +15,8 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   String _filmName = '';
-  Future<GetFilmResponse> _getFilmResponse;
   List<Film> _films = [];
+  Future<GetFilmResponse> _futureGetFilmResponse;
 
   void _filmNameChanged(String name) {
     setState(() {
@@ -25,25 +28,50 @@ class _SearchPageState extends State<SearchPage> {
     final futureResponse = FilmService.getFilm(_filmName);
     futureResponse.then((response) => {_filmsLoadedFromApi(response)});
     setState(() {
-      _getFilmResponse = futureResponse;
+      _futureGetFilmResponse = futureResponse;
     });
   }
 
-  void _filmsLoadedFromApi(GetFilmResponse response) {
+  void _filmsLoadedFromApi(GetFilmResponse response) async {
+    final filmsFromApi = response.results
+        .map((e) => Film(e.id, e.title, e.overview, false))
+        .toList();
+
+    final savedFilms = await FilmRepository.getAll();
+
+    final newFilms = filmsFromApi.map((film) {
+      for (var savedFilm in savedFilms) {
+        if (savedFilm.id == film.id) {
+          return Film(film.id, film.title, film.overview, true);
+        }
+      }
+      return film;
+    }).toList();
     setState(() {
-      _films = response.results
-          .map((e) => Film(e.title, e.overview, false))
-          .toList();
+      _films = newFilms;
     });
   }
 
   void Function() _makeFilmFavorite(Film film) {
-    final filmIndex = _films.indexOf(film);
     return () {
+      final updatedFilm = Film(
+        film.id,
+        film.title,
+        film.overview,
+        !film.favorite,
+      );
+
+      if (!film.favorite) {
+        FilmRepository.insert(updatedFilm);
+      } else {
+        FilmRepository.deleteById(film.id);
+      }
+
+      final filmIndex = _films.indexOf(film);
       setState(() {
         _films = [
           ..._films.getRange(0, filmIndex),
-          Film(film.title, film.overview, !film.favorite),
+          updatedFilm,
           ..._films.getRange(filmIndex + 1, _films.length),
         ];
       });
@@ -56,66 +84,20 @@ class _SearchPageState extends State<SearchPage> {
       padding: EdgeInsets.all(10),
       child: Column(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                flex: 15,
-                child: TextFormField(
-                  decoration: InputDecoration(
-                    hintText: 'Titanic',
-                    labelText: 'Nombre de la película *',
-                  ),
-                  onChanged: _filmNameChanged,
-                ),
-              ),
-              IconButton(
-                icon: Icon(Icons.search),
-                onPressed: _searchFilm,
-              ),
-            ],
-          ),
+          SearchFilmBar(_filmNameChanged, _searchFilm),
           FutureBuilder<GetFilmResponse>(
-            future: _getFilmResponse,
+            future: _futureGetFilmResponse,
             builder: (context, snapshot) {
               switch (snapshot.connectionState) {
                 case ConnectionState.done:
-                  return Expanded(
-                    child: ListView(
-                        children: _films
-                            .map((film) => Card(
-                                  child: Column(
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: ListTile(
-                                              leading: Icon(Icons.movie),
-                                              title: Text('${film.title}'),
-                                              subtitle:
-                                                  Text('${film.overview}'),
-                                            ),
-                                          ),
-                                          IconButton(
-                                            icon: Icon(film.favorite
-                                                ? Icons.favorite
-                                                : Icons.favorite_border),
-                                            onPressed: _makeFilmFavorite(film),
-                                          )
-                                        ],
-                                      )
-                                    ],
-                                  ),
-                                ))
-                            .toList()),
-                  );
+                  return FilmListView(_films, _makeFilmFavorite);
                 case ConnectionState.waiting:
                   return CircularProgressIndicator();
                 default:
                   return Container();
               }
             },
-          )
+          ),
         ],
       ),
     );

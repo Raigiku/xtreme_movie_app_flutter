@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:xtreme_movie_app/modules/favorite/favorite_page.dart';
 import 'package:xtreme_movie_app/modules/search/search_page.dart';
+import 'package:xtreme_movie_app/repositories/database_creator.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await DatabaseCreator().initDatabase();
   runApp(MyApp());
 }
 
